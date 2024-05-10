@@ -202,8 +202,8 @@ def get_frop_hash(filter_cent_use, filter_half_wid_use, weights):
     
     return (filter_cent_use, filter_half_wid_use, w_hash)
 
-def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, t_avg=300., 
-                     get_weights_from_flags=True, default_var=1., 
+def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, filter_param_dir, 
+                     t_avg=300., get_weights_from_flags=True, default_var=1., 
                      Ninterleave=4, cutoff=1e-9, frop_cache=None):
     """
     Get coherently averaged covariance
@@ -242,7 +242,9 @@ def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, t_avg=300.,
     """
     if frop_cache is None:
         frop_cache = {}
-    filter_cent_use, filter_half_wid_use = get_filt_params(antpairpol[:2], spw)
+    filter_cent_use, filter_half_wid_use = get_filt_params(antpairpol[:2], spw,
+                                                           filter_param_dir)
+
     times = vis_hd.times
     covs = []
     for int_ind in range(Ninterleave):
@@ -299,13 +301,103 @@ def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, t_avg=300.,
 
     return np.array(covs), frop_cache
 
+def cov_wrapper_per_waterfall(auto_hd, waterfall_file, spw, filter_param_dir, cutoff=1e-9, 
+                              t_avg=300., get_weights_from_flags=True, 
+                              default_var=1, Ninterleave=4, frop_cache=None, 
+                              profile=False):
+    """
+    Wrapper to calculate the FRF'd covariances for all antpairpols in a given waterfall file.
+    
+        auto_hd (HERAData):
+            The autocorrelation waterfall made by the EXTRACT_AUTOS script added
+            to the HERAData object with
+            the antpairpol in question.
+        waterfall_file (str):
+            Path to a waterfall file for which we just need the antpairpols and nsamples. Only partial I/O is
+            used within the internal functions.
+        spw (int):
+            Spectral window index (0-10 I think)
+        cutoff (float):
+            Eigenvalue cutoff for DPSS filter.
+        t_avg (float):
+            Coherent averaging window in seconds
+        get_weights_from_flags (array):
+            If True the negation of the flags, otherwise use uniform weights.
+        default_var (float):
+            Default variance to use when nsamples=0. These samples should get 0 weight and so this number should
+            not matter in theory. Needs to exist so that the variance doesn't have nans.
+        Ninterleave (int):
+            Number of interleaved time streams.
+        frop_cache (dict):
+            Cache of filters that have already been calculated.
+        profile (bool):
+            If true, indicates this is a profiling run and breaks the loop after one antpairpol.
+    """
+    
+    print("Setting up HERAData object.")
+    t_begin_read = time.time()
+    wf_hd = HERAData(waterfall_file)
+    t_finish_read = time.time()
+    t_to_read = t_finish_read - t_begin_read
+    print(f"Setup took {t_to_read} s")
+    print(f"wf_hd has {wf_hd.Nbls} baselines")
+    print(f"wf_hd has {wf_hd.Npols} pols")
+    
+    print("Calculating covariances.")
+    t_begin_calc = time.time()
+    covs = []
+    for antpairpol in wf_hd.bls:
+        titer = time.time()
+        covs_antpair, frop_cache = get_covs_antpair(auto_hd, wf_hd, spw, 
+                                                    antpairpol, filter_param_dir, t_avg=t_avg, 
+                                                    get_weights_from_flags=get_weights_from_flags, 
+                                                    default_var=default_var, cutoff=cutoff, frop_cache=frop_cache,
+                                                    Ninterleave=Ninterleave)
+        covs.append(covs_antpair)
+        titer_end = time.time()
+        print(f"This iteration took {titer_end - titer} s")
+        if profile:
+            break
+    t_end_calc = time.time()
+    t_to_calc = t_end_calc - t_begin_calc
+    print(f"Calc took {t_to_calc}")
+    
+    
+    return np.array(covs)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--outdir", type=str, required=True,
                         help="Path to the directory to which the output is written.")
     parser.add_argument("--filter-param-dir", type="str", required=True,
+                        dest="filter_param_dir",
                         help="The path to a yaml file containing the FRF parameters, keyed by antpair.")
     parser.add_argument("--spw", required=True, type=int,
                         help="The spectral window being analyzed.")
+    parser.add_argument("--auto-file", required=True, type=str, dest="auto_file",
+                        help="Path to extracted autocorrelations in waterfall format.")
+    parser.add_argument("waterfall_files", type=list, required=True, 
+                        help="(filtered) Waterfall files from which to grab nsamples")
+    parser.add_argument("--cutoff", required=False, default=1e-9,
+                        help="Eigenvalue cutoff for DPSS filter.")
+    parser.add_argument("--ninterleave", required=False, type=int, default=4,
+                        help="Number of interleaved streams for filtering.")
+    parser.add_argument("--fn-out", required=True, type=str, dest="fn_out",
+                        help="Where to write out the files.")
     args = parser.parse_args()
+
+    auto_hd = HERAData(args.auto_file)
+    # FIXME: The do script was cribbed from something that maps many inputs to one output
+    # But this needs to map 1-to-1...
+    covs_total = []
+    for wf_file in args.waterfall_files:
+        covs = cov_wrapper_per_waterfall(auto_hd, wf_file, args.spw, 
+                                         args.filter_param_dir,
+                                         cutoff=args.cutoff,
+                                         Ninterleave=args.ninterleave)
+        
+        covs_total.append(covs)
+    np.save(args.fn_out, covs_total)
+
+        
 
