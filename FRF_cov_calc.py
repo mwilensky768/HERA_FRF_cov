@@ -90,6 +90,8 @@ def get_var_from_hd(auto_hd, vis_hd, antpairpol, times):
     _ , _, nsamples = vis_hd.read(bls=antpairpol, times=times)
 
     new_auto_hd = auto_hd.select(times=times, bls=antpairpols[1:], inplace=False)
+    print(f"Any times in object: {np.any(np.isin(times,new_auto_hd.times))}")
+    
     data, _, _ = new_auto_hd.build_datacontainers()
 
     dt = nsamples[antpairpol] * vis_hd.integration_time[0]
@@ -175,7 +177,7 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
                                                axes=1)
         
     # does "Tfa,fat->Ttf" faster than einsum and fancy indexing
-    frop = np.zeros([Nchunk, chunk_size, Nfreqs], dtype=complex)
+    frop = np.zeros([Nchunk, Ntimes, Nfreqs], dtype=complex)
     for freq_ind in range(Nfreqs):
         frop[:, :, freq_ind] = np.tensordot(dchunk[:, freq_ind],
                                             lsq[freq_ind],
@@ -262,7 +264,7 @@ def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, filter_param_dir,
         
         times_s = (int_times - int_times[0]) * SDAY_SEC # Put in seconds
         
-        fropkey = get_frop_hash(times_s, filter_cent_use, filter_half_wid_use, weights)
+        fropkey = get_frop_hash(filter_cent_use, filter_half_wid_use, weights)
         if fropkey in frop_cache:
             print("I already have this frop.")
             frop = frop_cache[fropkey]
@@ -369,14 +371,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--outdir", type=str, required=True,
                         help="Path to the directory to which the output is written.")
-    parser.add_argument("--filter-param-dir", type="str", required=True,
+    parser.add_argument("--filter-param-dir", type=str, required=True,
                         dest="filter_param_dir",
                         help="The path to a yaml file containing the FRF parameters, keyed by antpair.")
     parser.add_argument("--spw", required=True, type=int,
                         help="The spectral window being analyzed.")
     parser.add_argument("--auto-file", required=True, type=str, dest="auto_file",
                         help="Path to extracted autocorrelations in waterfall format.")
-    parser.add_argument("waterfall_files", type=list, required=True, 
+    parser.add_argument("--waterfall-files", nargs="*", type=str, required=True,
+                        dest="waterfall_files",
                         help="(filtered) Waterfall files from which to grab nsamples")
     parser.add_argument("--cutoff", required=False, default=1e-9,
                         help="Eigenvalue cutoff for DPSS filter.")
@@ -387,6 +390,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     auto_hd = HERAData(args.auto_file)
+    # FIXME: These need to be changed for re-run
+    spw_chans = [(0, 95), (180, 265), (265,365), (365,417), (417,497), (497, 577), (577, 657), (657, 737)]
+    chan_low, chan_high = spw_chans[args.spw]
+    auto_hd.read(freq_chans=np.arange(chan_low,chan_high))
     # FIXME: The do script was cribbed from something that maps many inputs to one output
     # But this needs to map 1-to-1...
     covs_total = []
