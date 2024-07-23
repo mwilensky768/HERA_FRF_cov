@@ -8,7 +8,7 @@ setup_args = {
     "description": "Calculate noise covariances after HERA fringe rate filtering",
     "package_dir": {"HERA_FRF_cov": "HERA_FRF_cov"},
     "packages": ["HERA_FRF_cov"],
-    "install_requires": ["numpy", "hera_cal", "hera_filters", "astropy",
+    "install_requires": ["numpy", "hera-calibration", "hera-filters", "astropy",
                          "pyyaml"],
     "zip_safe": False
 }

@@ -1,1 +1,1 @@
-from FRF_cov_calc import *
+from .FRF_cov_calc import *
