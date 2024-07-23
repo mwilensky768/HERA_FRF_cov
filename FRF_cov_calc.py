@@ -7,7 +7,6 @@ SDAY_SEC = units.sday.to("s")
 from yaml import safe_load
 import warnings
 import time
-import warnings
 import hashlib
 import argparse
 
