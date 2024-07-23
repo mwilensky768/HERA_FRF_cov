@@ -1,30 +1,14 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from pyuvdata import UVData
 from hera_filters.dspec import dpss_operator
 from hera_cal.redcal import predict_noise_variance_from_autos
 from hera_cal.io import HERAData
-import glob
-import os
 from astropy import units
 SDAY_SEC = units.sday.to("s")
-
-import pickle
-import re
-from pathlib import Path
-import sys
-from itertools import combinations
-from matplotlib.colors import LogNorm, SymLogNorm
 from yaml import safe_load
 import warnings
-from scipy.stats import norm, kstest
-from scipy.linalg import cholesky
 import time
 import warnings
-from scipy.signal import blackmanharris
-
 import hashlib
-
 import argparse
 
 def get_filt_params(antpair, spw, filter_param_dir):
