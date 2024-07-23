@@ -253,7 +253,7 @@ def get_covs_antpair(auto_hd, vis_hd, spw,  antpairpol, filter_param_dir,
         int_times = times[int_ind::Ninterleave]
         
         if get_weights_from_flags:
-            _, _, flags = vis_hd.read(times=int_times, bls=antpairpol)
+            _, flags, _ = vis_hd.read(times=int_times, bls=antpairpol)
             weights = np.logical_not(flags[antpairpol]).astype(int)
             all_flagged = np.all(flags[antpairpol], axis=0)
             if np.any(all_flagged):
