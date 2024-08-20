@@ -1,6 +1,7 @@
 import numpy as np
 from hera_filters.dspec import dpss_operator
 from hera_cal.redcal import predict_noise_variance_from_autos
+from hera_cal.utils import lst_rephase
 from hera_cal.io import HERAData
 from astropy import units
 SDAY_SEC = units.sday.to("s")
@@ -84,8 +85,10 @@ def get_var_from_hd(auto_hd, vis_hd, antpairpol, times):
     
     return var
 
-def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
-              cutoff=1e-9, weights=None):
+def get_frop(times, filter_cent_use, filter_half_wid_use, freqs, t_avg=300.,
+             cutoff=1e-9, weights=None, wgt_tavg_by_nsample=True, 
+             nsamples=None, rephase=True, bl_vec=None, lat=-30.721526120689507,
+             dlst=None):
     """
     Get FRF operator.
     
@@ -96,8 +99,8 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
             Filter center obtained from get_filt_params.
         filter_half_wid_use (float):
             Filter half width obtained from get_filt_params
-        Nfreqs (int):
-            Number of frequencies in the data.
+        freqs (array):
+            Frequencies in the data (in Hz).
         t_avg (float):
             Desired coherent averaging length, in seconds.
         cutoff (float):
@@ -105,6 +108,21 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
         weights (array):
             Array of weights to use. Should either be the negation of the flags 
             or None. None uses uniform weights.
+        wgt_tavg_by_nsample (bool):
+            Whether to weight the time average by nsamples. 
+            Otherwise do uniform weighting.
+        nsamples (array):
+            Array proportional to how many nights contributed to each sample.
+        rephase (bool):
+            Whether to rephase before averaging.
+        bl_vec (array):
+            Baseline vector in ENU
+        lat (float):
+            Array latitude in degrees North.
+        dlst (float or array_like):
+            Amount of LST to rephase by, in radians. If float, rephases all
+            times by the same amount.
+        
     Returns:
         frop (array):
             Filter operator. Shape (Ntimes_coarse, Ntimes_fine, Nfreqs.)
@@ -113,6 +131,7 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
     # Time handling is a slightly modified port from hera_filters/hera_cal
     
     Ntimes = len(times)
+    Nfreqs = len(freqs)
     
     dmatr, evals = dpss_operator(times, np.array([filter_cent_use, ]), np.array([filter_half_wid_use, ]),
                                  eigenval_cutoff=np.array([cutoff, ]))
@@ -138,20 +157,27 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, Nfreqs, t_avg=300.,
     ddagW = dmatr.T.conj()[:, np.newaxis] * weights.T # aft
     ddagWd = ddagW @ dmatr # afa
     lsq = np.linalg.solve(ddagWd.swapaxes(0,1), ddagW.swapaxes(0,1)) # fat
-        
+
+    tavg_weights = nsamples if wgt_tavg_by_nsample else np.ones_like(nsamples)
     if chunk_remainder > 0: # Stack some 0s that get 0 weight so we can do the reshaping below without incident
         
         dmatr_stack_shape = [chunk_size - chunk_remainder, Nmodes]
         weights_stack_shape = [chunk_size - chunk_remainder, Nfreqs]
         dmatr = np.vstack((dmatr, np.zeros(dmatr_stack_shape, dtype=complex)))
-        weights = np.vstack((weights, np.zeros(weights_stack_shape, dtype=complex)))
+        tavg_weights = np.vstack((tavg_weights, np.zeros(weights_stack_shape, dtype=complex)))
     
     dres = dmatr.reshape(Nchunk, chunk_size, Nmodes)
-    wres = weights.reshape(Nchunk, chunk_size, Nfreqs)
+    wres = tavg_weights.reshape(Nchunk, chunk_size, Nfreqs)
     wnorm = wres.sum(axis=1)[:, np.newaxis]
-
     # normalize for an average
     wres = np.where(wnorm > 0, wres / wnorm, 0)
+    
+    # Apply the rephase to the weights matrix since it's mathematically equivalent and convenient
+    if rephase: 
+        wres = lst_rephase(wres.reshape(Nchunk * chunk_size, 1, Nfreqs),
+                           bl_vec, freqs, dlst, lat=lat, inplace=False)
+        wres = wres.reshape(Nchunk, chunk_size, Nfreqs)
+    
     # does "Ttf,Tta->Tfa" much faster than einsum and fancy indexing
     dchunk = np.zeros([Nchunk, Nfreqs, Nmodes], dtype=complex)
     for coarse_time_ind in range(Nchunk):
