@@ -168,31 +168,31 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, freqs, t_avg=300.,
             tavg_weights = np.vstack((tavg_weights, np.zeros(weights_stack_shape, dtype=complex)))
             dlst = np.append(dlst, np.zeros(chunk_size - chunk_remainder, dtype=float))
         
-            dres = dmatr.reshape(Nchunk, chunk_size, Nmodes)
-            wres = tavg_weights.reshape(Nchunk, chunk_size, Nfreqs)
-            wnorm = wres.sum(axis=1)[:, np.newaxis]
-            # normalize for an average
-            wres = np.where(wnorm > 0, wres / wnorm, 0)
+        dres = dmatr.reshape(Nchunk, chunk_size, Nmodes)
+        wres = tavg_weights.reshape(Nchunk, chunk_size, Nfreqs)
+        wnorm = wres.sum(axis=1)[:, np.newaxis]
+        # normalize for an average
+        wres = np.where(wnorm > 0, wres / wnorm, 0)
             
-            # Apply the rephase to the weights matrix since it's mathematically equivalent and convenient
-            if rephase: 
-                wres = lst_rephase(wres.reshape(Nchunk * chunk_size, 1, Nfreqs),
-                                bl_vec, freqs, dlst, lat=lat, inplace=False)
-                wres = wres.reshape(Nchunk, chunk_size, Nfreqs)
+        # Apply the rephase to the weights matrix since it's mathematically equivalent and convenient
+        if rephase: 
+            wres = lst_rephase(wres.reshape(Nchunk * chunk_size, 1, Nfreqs),
+                               bl_vec, freqs, dlst, lat=lat, inplace=False)
+            wres = wres.reshape(Nchunk, chunk_size, Nfreqs)
             
-            # does "Ttf,Tta->Tfa" much faster than einsum and fancy indexing
-            dchunk = np.zeros([Nchunk, Nfreqs, Nmodes], dtype=complex)
-            for coarse_time_ind in range(Nchunk):
-                dchunk[coarse_time_ind] = np.tensordot(wres[coarse_time_ind].T, 
-                                                    dres[coarse_time_ind],
-                                                    axes=1)
+        # does "Ttf,Tta->Tfa" much faster than einsum and fancy indexing
+        dchunk = np.zeros([Nchunk, Nfreqs, Nmodes], dtype=complex)
+        for coarse_time_ind in range(Nchunk):
+            dchunk[coarse_time_ind] = np.tensordot(wres[coarse_time_ind].T, 
+                                                   dres[coarse_time_ind],
+                                                   axes=1)
                 
-            # does "Tfa,fat->Ttf" faster than einsum and fancy indexing
-            frop = np.zeros([Nchunk, Ntimes, Nfreqs], dtype=complex)
-            for freq_ind in range(Nfreqs):
-                frop[:, :, freq_ind] = np.tensordot(dchunk[:, freq_ind],
-                                                    lsq[freq_ind],
-                                                    axes=1)
+        # does "Tfa,fat->Ttf" faster than einsum and fancy indexing
+        frop = np.zeros([Nchunk, Ntimes, Nfreqs], dtype=complex)
+        for freq_ind in range(Nfreqs):
+            frop[:, :, freq_ind] = np.tensordot(dchunk[:, freq_ind],
+                                                lsq[freq_ind],
+                                                axes=1)
     else:
         # ta,fat->ttf
         frop = np.tensordot(dmatr, lsq.transpose(1, 2, 0), axes=1)
