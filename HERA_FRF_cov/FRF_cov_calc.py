@@ -145,7 +145,7 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, freqs, t_avg=300.,
 
     
     if weights is None: 
-        weights = np.ones([Ntimes, hd.Nfreqs])
+        weights = np.ones([Ntimes, Nfreqs])
         
     #####Index Legend#####
     # a = DPSS mode      #
@@ -158,13 +158,14 @@ def get_frop(times, filter_cent_use, filter_half_wid_use, freqs, t_avg=300.,
     ddagWd = ddagW @ dmatr # afa
     lsq = np.linalg.solve(ddagWd.swapaxes(0,1), ddagW.swapaxes(0,1)) # fat
 
-    tavg_weights = nsamples if wgt_tavg_by_nsample else np.ones_like(nsamples)
+    tavg_weights = nsamples if wgt_tavg_by_nsample else np.where(weights, np.ones([Ntimes, Nfreqs]), 0)
     if chunk_remainder > 0: # Stack some 0s that get 0 weight so we can do the reshaping below without incident
         
         dmatr_stack_shape = [chunk_size - chunk_remainder, Nmodes]
         weights_stack_shape = [chunk_size - chunk_remainder, Nfreqs]
         dmatr = np.vstack((dmatr, np.zeros(dmatr_stack_shape, dtype=complex)))
         tavg_weights = np.vstack((tavg_weights, np.zeros(weights_stack_shape, dtype=complex)))
+        dlst = np.append(dlst, np.zeros(chunk_size - chunk_remainder, dtype=float))
     
     dres = dmatr.reshape(Nchunk, chunk_size, Nmodes)
     wres = tavg_weights.reshape(Nchunk, chunk_size, Nfreqs)
